@@ -157,7 +157,7 @@ public class CipherClientImpl implements ICipherClient {
 			errorMessageDTO.setStatusCode(cipherResponseDTO.getStatusCode());
 			errorMessageDTO.setTimestamp(new Date());
 			errorMessageDTO.setMessage(ConstantsToken.MSG_ERROR_500.getName());
-			errorMessageDTO.setDetail("url: "+System.getenv("app.url.cipher.decode") +"/"+ErrorDetail.getDetail(e));
+			errorMessageDTO.setDetail(ErrorDetail.getDetail(e));
 			cipherResponseDTO.setErrorMessageDTO(errorMessageDTO);
 		} finally {
 			client.close();
