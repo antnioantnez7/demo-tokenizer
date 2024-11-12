@@ -51,6 +51,9 @@ public class LdapClientImpl implements ILdapClient {
 
 	public LdapClientImpl(HttpClientFactory httpClientFactory) {
 		this.httpClientFactory = httpClientFactory;
+		if(System.getenv("app.url.ldap.auth") != null) {
+			urlLdapAuth = System.getenv("app.url.ldap.auth");
+		}
 	}
 
 	/**
