@@ -1,0 +1,442 @@
+/**
+ * Checks whether a specific OpenShift deployment exists based on the provided deployment name.
+ *
+ * @param deploymentName The name of the deployment to check.
+ * @return True (boolean) if the deployment exists, False (boolean) otherwise.
+ */
+def appExists(String deploymentName) {
+    println("Validating if app ${deploymentName} exists")
+    def output = sh(returnStatus: true, script: "oc get deployment ${deploymentName}")
+    def exists = output != 0 ? false : true
+
+    if (exists){
+        println("App ${deploymentName} DETECTED, configuring update...")
+    }
+    else {
+        println("App ${deploymentName} NOT DETECTED, configuring creation...")
+    }
+
+    return exists
+}
+
+/**
+ * Retrieves emails of members from Bitbucket groups using REST API.
+ *
+ * @param bitbucketGroups List of Bitbucket group names to fetch member emails from.
+ * @return List of email addresses fetched from all specified Bitbucket groups.
+ */
+def getBitbucketEmails(bitbucketGroups) {
+    withCredentials([usernamePassword(credentialsId: 'jenkins-system-user', usernameVariable: 'BITBUCKET_USER', passwordVariable: 'BITBUCKET_PASSWORD')]) {
+        def baseUrl = "${env.HTTP_SCHEME}://${env.CICD_HOST}:${env.BITBUCKET_PORT}/rest/api/latest/admin/groups/more-members"
+        def auth = "${env.BITBUCKET_USER}:${env.BITBUCKET_PASSWORD}"
+
+        def allEmails = []
+
+        bitbucketGroups.each { bitbucketGroup ->      
+            def command = "curl --silent --request GET " +
+                            "--url '${baseUrl}?context=${bitbucketGroup}' " +
+                            "--header 'Accept: application/json' " +
+                            "--user '${auth}'"
+
+            def response = sh(script: command, returnStdout: true).trim()
+
+            def jsonSlurper = new groovy.json.JsonSlurper()
+            def parsedResponse = jsonSlurper.parseText(response)
+
+            def emailList = parsedResponse.values.collect { it.emailAddress }
+            allEmails.addAll(emailList)
+            }
+
+        return allEmails
+    }
+}
+
+/**
+ * Sends an email notification using emailext plugin in Jenkins.
+ *
+ * @param emails List of email addresses to send the notification to.
+ * @param logFile Path to the log file to attach to the email.
+ */
+def sendEmailNotification(emails, logFile) {
+    def emailList = emails.join(',')
+
+    def reportType = env.CHANGE_ID ? "Quality" : "Build"
+
+    emailext(
+        to: emailList,
+        subject: "${env.BUILD_TYPE} ${reportType} #${env.BUILD_NUMBER} - ${currentBuild.result} - ${env.PROJECT}",
+        body: """
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>${reportType} Report</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        line-height: 1.6;
+                        color: #333;
+                        margin: 0;
+                        padding: 20px;
+                        background-color: #f4f4f4; /* Fondo neutro */
+                    }
+                    .container {
+                        max-width: 800px;
+                        margin: 0 auto;
+                        background: #fff;
+                        padding: 20px;
+                        border-radius: 8px;
+                        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                    }
+                    h1 {
+                        color: #0073e6; /* Color azul */
+                        font-size: 24px;
+                        margin-bottom: 20px;
+                    }
+                    p {
+                        margin: 0 0 10px;
+                        font-size: 16px;
+                    }
+                    .highlight {
+                        background-color: #e7f0ff; /* Fondo azul claro */
+                        padding: 10px;
+                        border-left: 5px solid #0073e6; /* Borde azul oscuro */
+                        border-radius: 4px;
+                        font-weight: bold;
+                    }
+                    .status-success {
+                        color: #28a745; /* Verde para éxito */
+                    }
+                    .status-failure {
+                        color: #dc3545; /* Rojo para fallo */
+                    }
+                    .status-aborted {
+                        color: #d6c61a; /* Color amarillo oscuro para abortado */
+                    }
+                    .footer {
+                        margin-top: 20px;
+                        font-size: 14px;
+                        color: #666;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>${reportType} Report</h1>
+                    <p class="highlight">${reportType} Author: ${env.GIT_AUTHOR_NAME}</p>
+                    <p class="highlight">${reportType} Message: ${env.COMMIT_MESSAGE}</p>
+                    <p class="highlight">${reportType} URL: ${env.BUILD_URL}</p>
+                    <p class="highlight">Environment: ${env.BRANCH_NAME}</p>
+                    <p class="highlight">
+                        ${reportType} Status: 
+                        <span class="
+                            ${currentBuild.result == 'SUCCESS' ? 'status-success' :
+                            currentBuild.result == 'ABORTED' ? 'status-aborted' :
+                            'status-failure'}
+                        ">
+                            ${currentBuild.result}
+                        </span>
+                    </p>
+                    <p class="highlight">Service exposed on ${env.SERVICE_URL}.</p>
+                    <p class="footer">See attached log for details.</p>
+                </div>
+            </body>
+            </html>
+        """,
+        mimeType: 'text/html',
+        attachmentsPattern: logFile
+    )
+
+}
+
+/** 
+* Checks if the current branch name (`env.BRANCH_NAME`)
+* meets specific criteria, returning `true` if the branch is valid for continuing 
+* with the pipeline, and `false` otherwise.
+*/
+def isValidBranch = {
+    env.BRANCH_NAME ==~ /^PR-\d+$/ || 
+    env.BRANCH_NAME == 'develop' || 
+    env.BRANCH_NAME == 'qa' || 
+    env.BRANCH_NAME == 'feature_upgrade_etapa1'
+}
+
+pipeline {
+    agent {
+        any {}
+    }
+
+    triggers {
+        // Detect Bitbucket events (Pr's included)
+        bitbucketPush()
+    }
+
+    options {
+        skipStagesAfterUnstable()
+        skipDefaultCheckout()
+    }
+
+    stages {
+        /**
+        * Clean the workspace to avoid potential conflicts.
+        */
+        stage('Clean Workspace') {
+            steps {
+                cleanWs()
+            }
+        }
+
+        /**
+        * Checkout for the specifiec event (commit or PR).
+        */
+        stage('Checkout') {
+            when {
+                expression { return isValidBranch()}
+            }
+            steps {
+                script {        
+                    println(env.BRANCH_NAME)             
+                    if (env.CHANGE_ID) {
+                        echo "This is a Pull Request: ${env.CHANGE_ID}"
+                        env.BUILD_TYPE = "PULL REQUEST CICD: "
+                        checkout scm
+                    } else {
+                        echo "This is a branch build: ${env.BRANCH_NAME}"
+                        env.BUILD_TYPE = "COMMIT CICD: "
+                        checkout scm                
+                    }
+                }
+            }
+        }
+  
+        /**
+        * Set the configuration for the pipeline considering branch, project and deployment.
+        */
+        stage('Configuring') {
+            when {
+                expression { return isValidBranch()}
+            }
+            steps {
+                script {                   
+                    // Dynamic code
+                    env.PROJECT = "COMMON-APPS".toLowerCase()
+                    env.MICROSERVICE_NAME = "banobras-api-tokenizer"
+                    env.DOCKERFILE_PATH = "Dockerfile"
+
+                    env.SONAR_CREDENTIALS_ID = 'sonar-cmnapps-api-tokenizer'
+
+                    // Static code
+                    env.HTTP_SCHEME = "http"
+                    env.NEXUS_CREDENTIALS_ID = 'nexus-credentials'
+
+                    env.DEPLOYMENT_NAME = "${env.PROJECT}-${env.MICROSERVICE_NAME}-${env.BRANCH_NAME}"
+                    env.DOCKER_IMAGE = "${env.CICD_HOST}:${env.DOCKER_PORT}/${env.PROJECT}/${env.DEPLOYMENT_NAME}:latest"
+                    
+                    if (env.BRANCH_NAME != "prod" && env.BRANCH_NAME != "master"){
+                        env.OPENSHIFT_SERVER = env.OPENSHIFT_NONPROD_SERVER
+                    }
+                    else {
+                        env.OPENSHIFT_SERVER = env.OPENSHIFT_PROD_SERVER
+                    }
+                    
+                    // Notifications and author
+                    env.GIT_AUTHOR_NAME = sh(script: 'git log -1 --pretty=format:%an', returnStdout: true).trim()
+                    env.COMMIT_MESSAGE = sh(script: "git log -1 --pretty=%B", returnStdout: true).trim()
+                    env.NOTIFICATION_EMAILS = getBitbucketEmails(["gpo-${env.PROJECT}", 'gpo-devops-notifications']).join(',')
+
+                    sh "echo Configuring pipeline for ${env.DEPLOYMENT_NAME} on server ${env.OPENSHIFT_SERVER}"
+                }
+            }
+        }
+
+        /**
+        * Build the source code usign a Dockerfile to generate an image that will be saved in nexus.
+        */
+        stage('Build') {
+            when {
+                expression { return env.CHANGE_ID == null && isValidBranch()}
+            }
+            steps {
+                script {
+                    echo "Build stage with nexus"
+                    withCredentials([usernamePassword(credentialsId: "${env.NEXUS_CREDENTIALS_ID}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                        sh "echo build con Nexus"
+                        sh 'echo $PASSWORD | sudo docker login -u $USERNAME --password-stdin $CICD_HOST:$DOCKER_PORT'
+                        sh "sudo docker build -t ${env.DOCKER_IMAGE} -f ${env.DOCKERFILE_PATH} ."
+                        sh "sudo docker tag ${env.DOCKER_IMAGE} ${env.DOCKER_IMAGE}"
+                        sh "sudo docker push ${env.DOCKER_IMAGE}"
+                    }
+                }
+            }
+        }
+
+        /**
+        * Run tests for source code.
+        */
+        stage('Test') {
+            when {
+                expression { return isValidBranch()}
+            }
+            steps {
+                sh 'echo Unit testing...'
+                // #TODO: Add the steps to run unit tests and coverage report
+            }
+        }
+
+        /**
+        * Run an analysis to get a quality report of source code.
+        * This method is for branch or PR analysis.
+        */
+        stage('Code Quality') {
+            when {
+                expression { return env.RUN_QUALITY_CODE_SCAN == 'true' && isValidBranch()}
+            }
+            steps {
+                withCredentials([usernamePassword(credentialsId: "${env.SONAR_CREDENTIALS_ID}", usernameVariable: 'PROJECT_KEY', passwordVariable: 'TOKEN'), usernamePassword(credentialsId: "${env.NEXUS_CREDENTIALS_ID}", usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                    script {
+                        // Check if the event is PR
+                        def is_pr = env.CHANGE_ID != null
+                        sh 'echo $PASSWORD | sudo docker login -u $USERNAME --password-stdin $CICD_HOST:$DOCKER_PORT'
+                        if (is_pr){
+                            sh 'echo Code Quality for PULL REQUEST'
+
+                            env.BUILD_URL = "${env.HTTP_SCHEME}://${env.CICD_HOST}:${env.SONAR_PORT}/dashboard?id=${env.PROJECT_KEY}&pullRequest=${env.CHANGE_ID}"
+
+                            sh '''
+                                sudo docker run --rm \
+                                    -e SONAR_PROJECT_KEY=$PROJECT_KEY \
+                                    -e SONAR_HOST_URL=${HTTP_SCHEME}://${CICD_HOST}:${SONAR_PORT} \
+                                    -e SONAR_TOKEN=$TOKEN \
+                                    -v \$(pwd):/usr/src/mymaven -w /usr/src/mymaven \
+                                    bnodevopsb:18083/devops-images/devops-images-custom-eclipse-temurin-17-maven \
+                                    sh -c "mvn verify sonar:sonar \
+                                            -Dsonar.projectKey=$PROJECT_KEY \
+                                            -Dsonar.pullrequest.key=$CHANGE_ID \
+                                            -Dsonar.pullrequest.branch=$CHANGE_BRANCH \
+                                            -Dsonar.pullrequest.base=$CHANGE_TARGET \
+                                            -Dsonar.host.url=${HTTP_SCHEME}://${CICD_HOST}:${SONAR_PORT} \
+                                            -Dsonar.token=$TOKEN"
+                            '''
+                        }else{
+                            sh 'echo Code Quality for BRANCH'
+                            sh '''
+                                sudo docker run --rm \
+                                    -e SONAR_PROJECT_KEY=$PROJECT_KEY \
+                                    -e SONAR_HOST_URL=${HTTP_SCHEME}://${CICD_HOST}:${SONAR_PORT} \
+                                    -e SONAR_TOKEN=$TOKEN \
+                                    -v \$(pwd):/usr/src/mymaven -w /usr/src/mymaven \
+                                    bnodevopsb:18083/devops-images/devops-images-custom-eclipse-temurin-17-maven \
+                                    sh -c "mvn verify sonar:sonar \
+                                            -Dsonar.projectKey=$PROJECT_KEY \
+                                            -Dsonar.host.url=${HTTP_SCHEME}://${CICD_HOST}:${SONAR_PORT} \
+                                            -Dsonar.token=$TOKEN"
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+        /**
+        * Configure and deliver the app to Openshift
+        */
+        stage('Deliver') {
+            when {
+                expression { return env.CHANGE_ID == null && isValidBranch()}
+            }
+            steps {
+                script {
+                    withCredentials([string(credentialsId: "sa-jenkins-${env.PROJECT}-${env.BRANCH_NAME}", variable: 'OPENSHIFT_TOKEN'),
+                    file(credentialsId: 'https-crt-file', variable: 'TLS_CRT_FILE'),
+                    file(credentialsId: 'https-key-file', variable: 'TLS_KEY_FILE')]) {
+
+                        sh "echo Deliver to openshift..."
+
+                        sh 'oc login --token=$OPENSHIFT_TOKEN --server=$OPENSHIFT_SERVER --insecure-skip-tls-verify'
+                        sh "oc project ${env.PROJECT}-${env.BRANCH_NAME}"
+
+                        if (appExists(env.MICROSERVICE_NAME)) {
+                            echo "Updating app"
+                            sh "oc import-image ${env.MICROSERVICE_NAME}"
+                            sh "oc set image deployment/${env.MICROSERVICE_NAME} ${env.MICROSERVICE_NAME}=${env.DOCKER_IMAGE}"
+                            sh "oc rollout restart deployment/${env.MICROSERVICE_NAME}"
+                        } else {
+                            echo "Creating app"
+                            sh "oc new-app --name=${env.MICROSERVICE_NAME} --image=${env.DOCKER_IMAGE}"
+
+                            // HTTPS Service creation
+                            sh """
+                            oc expose service ${env.MICROSERVICE_NAME} \\
+                                --name=${env.MICROSERVICE_NAME}-route \\
+                                --hostname=${env.MICROSERVICE_NAME}-${env.PROJECT}-${env.BRANCH_NAME}.banobras.gob.mx
+                            """
+
+                            // HTTPS Route Configuration
+                            def certificate = readFile(file: TLS_CRT_FILE).trim().replace("\n", "\\n")
+                            def key = readFile(file: TLS_KEY_FILE).trim().replace("\n", "\\n")
+
+                            sh """
+                            set +x &&
+                            oc patch route ${env.MICROSERVICE_NAME}-route -p '{
+                            "spec": {
+                                "tls": {
+                                "termination": "edge",
+                                "insecureEdgeTerminationPolicy": "Redirect",
+                                "certificate": "${certificate}",
+                                "key": "${key}"
+                                }
+                            },
+                            "metadata": {
+                                "annotations": {
+                                    "haproxy.router.openshift.io/timeout": "${env.GLOBAL_OPENSHIFT_TIMEOUT_CONFIGURATION}"
+                                }
+                            }
+                            }' > /dev/null
+                            """
+
+                            // Update imagePullPolicy to Always to ensure fresh images in all deploys.
+                            sh """
+                            oc patch deployment ${env.MICROSERVICE_NAME} -p '{"spec": {"template": {"spec": {"containers": [{"name": "${env.MICROSERVICE_NAME}", "imagePullPolicy": "Always"}]}}}}'
+                            """
+                        }
+
+                        // In each deploy, update the current value of global timeout
+                        sh """
+                            set +x &&
+                            oc patch route ${env.MICROSERVICE_NAME}-route -p '{
+                            "metadata": {
+                                "annotations": {
+                                    "haproxy.router.openshift.io/timeout": "${env.GLOBAL_OPENSHIFT_TIMEOUT_CONFIGURATION}"
+                                }
+                            }
+                            }' > /dev/null
+                        """
+
+                        env.SERVICE_URL = "https://" + sh(script: "oc get route ${env.MICROSERVICE_NAME}-route -o jsonpath='{.spec.host}'", returnStdout: true).trim()
+                        println "Service exposed on ${env.SERVICE_URL}"
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            script {
+                if (isValidBranch()){
+                    // Get the log file
+                    def logFile = 'build.txt'
+                    writeFile file: logFile, text: currentBuild.rawBuild.getLog(env.MAX_LOG_LINES.toInteger()).join('\n')
+
+                    // Send email notification
+                    sendEmailNotification(env.NOTIFICATION_EMAILS.split(',').toList(), logFile)
+                }
+                else{
+                    println("Branch control not detected")
+                    return
+                }
+            }
+        }
+    }
+}

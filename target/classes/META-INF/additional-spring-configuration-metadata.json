@@ -1,0 +1,157 @@
+{"properties": [
+  {
+    "name": "key.private",
+    "type": "java.lang.String",
+    "description": "A description for 'key.private'"
+  },
+  {
+    "name": "key.public",
+    "type": "java.lang.String",
+    "description": "A description for 'key.public'"
+  },
+  {
+    "name": "method.auth",
+    "type": "java.lang.String",
+    "description": "A description for 'method.auth'"
+  },
+  {
+    "name": "ldap.server",
+    "type": "java.lang.String",
+    "description": "A description for 'ldap.server'"
+  },
+  {
+    "name": "app.method.auth",
+    "type": "java.lang.String",
+    "description": "A description for 'app.method.auth'"
+  },
+  {
+    "name": "app.file.privatekey",
+    "type": "java.lang.String",
+    "description": "A description for 'app.file.privatekey'"
+  },
+  {
+    "name": "app.file.publickey",
+    "type": "java.lang.String",
+    "description": "A description for 'app.file.publickey'"
+  },
+  {
+    "name": "app.cert.password",
+    "type": "java.lang.String",
+    "description": "A description for 'app.cert.password'"
+  },
+  {
+    "name": "app.secret.key",
+    "type": "java.lang.String",
+    "description": "A description for 'app.secret.key'"
+  },
+  {
+    "name": "app.ldap.validate",
+    "type": "java.lang.String",
+    "description": "A description for 'app.ldap.validate'"
+  },
+  {
+    "name": "app.ldap.server.ip",
+    "type": "java.lang.String",
+    "description": "A description for 'app.ldap.server'"
+  },
+  {
+    "name": "app.ldap.search.base",
+    "type": "java.lang.String",
+    "description": "A description for 'app.ldap.search.base'"
+  },
+  {
+    "name": "app.ldap.password",
+    "type": "java.lang.String",
+    "description": "A description for 'app.ldap.password'"
+  },
+  {
+    "name": "app.ldap.username",
+    "type": "java.lang.String",
+    "description": "A description for 'app.ldap.username'"
+  },
+  {
+    "name": "app.cipher.key",
+    "type": "java.lang.String",
+    "description": "A description for 'app.cipher.key'"
+  },
+  {
+    "name": "app.cipher.iv",
+    "type": "java.lang.String",
+    "description": "A description for 'app.cipher.iv'"
+  },
+  {
+    "name": "app.cipher.mode",
+    "type": "java.lang.String",
+    "description": "A description for 'app.cipher.mode'"
+  },
+  {
+    "name": "app.cipher.aes",
+    "type": "java.lang.String",
+    "description": "A description for 'app.cipher.aes'"
+  },
+  {
+    "name": "app.cipher.modeNoPadd",
+    "type": "java.lang.String",
+    "description": "A description for 'app.cipher.modeNoPadd'"
+  },
+  {
+    "name": "app.cipher.modeNoPadd",
+    "type": "java.lang.String",
+    "description": "A description for 'app.cipher.modeNoPadd'"
+  },
+  {
+    "name": "app.cipher.modeNoPadd",
+    "type": "java.lang.String",
+    "description": "A description for 'app.cipher.modeNoPadd'"
+  },
+  {
+    "name": "app.valid.client.rest",
+    "type": "java.lang.String",
+    "description": "A description for 'app.valid.client.rest'"
+  },
+  {
+    "name": "app.url.ldap.auth",
+    "type": "java.lang.String",
+    "description": "A description for 'app.url.ldap.auth'"
+  },
+  {
+    "name": "app.cipher.modenopadd",
+    "type": "java.lang.String",
+    "description": "A description for 'app.cipher.modenopadd'"
+  },
+  {
+    "name": "app.ldap.server",
+    "type": "java.lang.String",
+    "description": "A description for 'app.ldap.server'"
+  },
+  {
+    "name": "app.ldap.dominio.mail",
+    "type": "java.lang.String",
+    "description": "A description for 'app.ldap.dominio.mail'"
+  },
+  {
+    "name": "app.url.cipher.decode",
+    "type": "java.lang.String",
+    "description": "A description for 'app.url.cipher.decode'"
+  },
+  {
+    "name": "app.v2.url.cipher.decode",
+    "type": "java.lang.String",
+    "description": "A description for 'app.v2.url.cipher.decode'"
+  },
+  {
+    "name": "app.file.filejks",
+    "type": "java.lang.String",
+    "description": "A description for 'app.file.filejks'"
+  },
+  {
+    "name": "app.cert.jks.password",
+    "type": "java.lang.String",
+    "description": "A description for 'app.cert.jks.password'"
+  },
+  {
+    "name": "app.bypass.cert",
+    "type": "java.lang.String",
+    "description": "A description for 'app.bypass.cert'"
+  }
+]}
